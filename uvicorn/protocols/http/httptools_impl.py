@@ -5,7 +5,7 @@ import re
 import urllib
 
 import httptools
-
+from uvicorn.protocols.http.common import BaseRequestResponseCycle
 from uvicorn.protocols.utils import (
     get_client_addr,
     get_local_addr,
@@ -350,7 +350,7 @@ class HttpToolsProtocol(asyncio.Protocol):
             self.transport.close()
 
 
-class RequestResponseCycle:
+class RequestResponseCycle(BaseRequestResponseCycle):
     def __init__(
         self,
         scope,
@@ -365,6 +365,7 @@ class RequestResponseCycle:
         keep_alive,
         on_response,
     ):
+        super().__init__()
         self.scope = scope
         self.transport = transport
         self.flow = flow
@@ -389,33 +390,6 @@ class RequestResponseCycle:
         self.response_complete = False
         self.chunked_encoding = None
         self.expected_content_length = 0
-
-    # ASGI exception wrapper
-    async def run_asgi(self, app):
-        try:
-            result = await app(self.scope, self.receive, self.send)
-        except BaseException as exc:
-            msg = "Exception in ASGI application\n"
-            self.logger.error(msg, exc_info=exc)
-            if not self.response_started:
-                await self.send_500_response()
-            else:
-                self.transport.close()
-        else:
-            if result is not None:
-                msg = "ASGI callable should return None, but returned '%s'."
-                self.logger.error(msg, result)
-                self.transport.close()
-            elif not self.response_started and not self.disconnected:
-                msg = "ASGI callable returned without starting response."
-                self.logger.error(msg)
-                await self.send_500_response()
-            elif not self.response_complete and not self.disconnected:
-                msg = "ASGI callable returned without completing response."
-                self.logger.error(msg)
-                self.transport.close()
-        finally:
-            self.on_response = None
 
     async def send_500_response(self):
         await self.send(
@@ -462,7 +436,11 @@ class RequestResponseCycle:
                     get_path_with_query_string(self.scope),
                     self.scope["http_version"],
                     status_code,
-                    extra={"status_code": status_code, "scope": self.scope},
+                    extra = {
+                        "status_code": status_code,
+                        "scope": self.scope,
+                        "elapsed_ms": self._get_formatted_elapsed_ms()
+                    },
                 )
 
             # Write response status line and headers

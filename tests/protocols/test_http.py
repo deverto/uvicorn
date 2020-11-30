@@ -182,6 +182,7 @@ def test_request_logging(path, protocol_cls, caplog):
     protocol.loop.run_one()
 
     assert '"GET {} HTTP/1.1" 200'.format(path) in caplog.records[0].message
+    assert "elapsed_ms" in caplog.records[0].__dict__
 
 
 @pytest.mark.parametrize("protocol_cls", HTTP_PROTOCOLS)
